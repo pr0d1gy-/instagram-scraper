@@ -15,6 +15,7 @@ import sys
 import textwrap
 import time
 
+
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -85,7 +86,8 @@ class InstagramScraper(object):
                             latest_stamps=False,
                             media_types=['image', 'video', 'story-image', 'story-video'],
                             tag=False, location=False, search_location=False, comments=False,
-                            verbose=0, include_location=False, filter=None)
+                            verbose=0, include_location=False, filter=None, filter_by_user_media_count=0,
+                            locations=[], save_user_by_each_iter=False)
 
         allowed_attr = list(default_attr.keys())
         default_attr.update(kwargs)
@@ -360,7 +362,23 @@ class InstagramScraper(object):
 
     def scrape_location(self):
         self.__scrape_query(self.query_location_gen)
-        
+
+    def scrape_users_by_location_name(self):
+        dirty_locations = self.search_locations(is_return=True)
+        self.locations = set()
+
+        for location in dirty_locations:
+            self.locations.add(location['place']['location']['pk'])
+
+        self.scrape_users_by_location_id()
+
+    def scrape_users_by_location_id(self):
+        if not self.locations:
+            self.locations = self.usernames.copy()
+        self.usernames = set()
+
+        self.__search_users_by_location_id(self.query_location_gen)
+
     def worker_wrapper(self, fn, *args, **kwargs):
         try:
             if self.quit:
@@ -369,6 +387,62 @@ class InstagramScraper(object):
         except:
             self.logger.debug("Exception in worker thread", exc_info=sys.exc_info())
             raise
+
+    def __search_users_by_location_id(self, media_generator, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS)):
+        self.quit = False
+        self.userids = set()
+
+        try:
+            iter_location = 0
+            for location in self.locations:
+
+                _iter = 0
+                for item in tqdm.tqdm(media_generator(location),
+                                      desc='Searching users for {0} location id'.format(location),
+                                      unit=" media", disable=self.quiet):
+                    self.quit = False
+                    user_id = item['owner']['id']
+                    if user_id in self.userids:
+                        continue
+                    self.userids.add(user_id)
+
+                    userinfo = self.get_userinfo_by_id(user_id)
+
+                    try:
+                        user_media_count = int(userinfo['media_count'])
+                    except (ValueError, LookupError, TypeError):
+                        continue
+                    else:
+                        if self.filter_by_user_media_count and \
+                                self.filter_by_user_media_count > user_media_count:
+                            continue
+
+                    username = userinfo['username']
+                    if username in self.usernames:
+                        continue
+
+                    self.usernames.add(username)
+
+                    if self.save_user_by_each_iter:
+                        self.scrape()
+                        self.usernames.remove(username)
+
+                    _iter += 1
+                    if self.maximum != 0 and _iter >= self.maximum:
+                        self.quit = False
+                        break
+
+                    self.quit = False
+
+                iter_location += 1
+                if self.maximum != 0 and iter_location >= self.maximum:
+                    break
+
+        finally:
+            self.quit = True
+
+        if not self.save_user_by_each_iter:
+            self.scrape()
 
     def __scrape_query(self, media_generator, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS)):
         """Scrapes the specified value for posted media."""
@@ -385,7 +459,7 @@ class InstagramScraper(object):
                 if self.include_location:
                     media_exec = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
-                iter = 0
+                _iter = 0
                 for item in tqdm.tqdm(media_generator(value), desc='Searching {0} for posts'.format(value), unit=" media",
                                       disable=self.quiet):
                     if ((item['is_video'] is False and 'image' in self.media_types) or \
@@ -403,8 +477,8 @@ class InstagramScraper(object):
                     if self.media_metadata or self.comments or self.include_location:
                         self.posts.append(item)
 
-                    iter = iter + 1
-                    if self.maximum != 0 and iter >= self.maximum:
+                    _iter += 1
+                    if self.maximum != 0 and _iter >= self.maximum:
                         break
 
                 if future_to_item:
@@ -586,20 +660,23 @@ class InstagramScraper(object):
                     self.logger.error("Unable to scrape user - %s" % username)
         finally:
             self.quit = True
-            self.logout()            
+            self.logout()
+
+    def get_userinfo_by_id(self, user_id):
+        url = USER_INFO.format(user_id)
+        resp = self.get_json(url)
+
+        if resp is None:
+            self.logger.error('Error getting user info for {0}'.format(user_id))
+            return
+
+        return json.loads(resp)['user']
 
     def get_profile_pic(self, dst, executor, future_to_item, user, username):
         if 'image' not in self.media_types:
             return
 
-        url = USER_INFO.format(user['id'])
-        resp = self.get_json(url)
-
-        if resp is None:
-            self.logger.error('Error getting user info for {0}'.format(username))
-            return
-
-        user_info = json.loads(resp)['user']
+        user_info = self.get_userinfo_by_id(user['id'])
 
         if user_info['has_anonymous_profile_picture']:
             return
@@ -935,7 +1012,7 @@ class InstagramScraper(object):
         resp = requests.get(SEARCH_URL.format(query))
         return json.loads(resp.text)
 
-    def search_locations(self):
+    def search_locations(self, is_return=False):
         query = ' '.join(self.usernames)
         result = self.__search(query)
 
@@ -943,6 +1020,9 @@ class InstagramScraper(object):
             raise ValueError("No locations found for query '{0}'".format(query))
 
         sorted_places = sorted(result['places'], key=itemgetter('position'))
+
+        if is_return:
+            return sorted_places[0:5]
 
         for item in sorted_places[0:5]:
             place = item['place']
@@ -1045,8 +1125,12 @@ def main():
                         help='Scrape new media since timestamps by user in specified file')
     parser.add_argument('--tag', action='store_true', default=False, help='Scrape media using a hashtag')
     parser.add_argument('--filter', default=None, help='Filter by tags in user posts', nargs='*')
+    parser.add_argument('--filter-by-user-media-count', type=int, default=0, help='Filter users by media posts quantity')
     parser.add_argument('--location', action='store_true', default=False, help='Scrape media using a location-id')
     parser.add_argument('--search-location', action='store_true', default=False, help='Search for locations by name')
+    parser.add_argument('--users-by-location-name', action='store_true', default=False, help='Search and scrape users by location name')
+    parser.add_argument('--users-by-location-id', action='store_true', default=False, help='Search and scrape users by location id')
+    parser.add_argument('--save-user-by-each-iter', action='store_true', default=False, help='Stop user by each iteration in location')
     parser.add_argument('--comments', action='store_true', default=False, help='Save post comments to json file')
     parser.add_argument('--interactive', '-i', action='store_true', default=False,
                         help='Enable interactive login challenge solving')
@@ -1075,6 +1159,14 @@ def main():
         parser.print_help()
         raise ValueError('Filters apply to user posts')
 
+    if args.location and args.users_by_location_id:
+        parser.print_help()
+        raise ValueError('Must provide only one of the following: users-by-location-id OR location')
+
+    if args.users_by_location_name and args.users_by_location_id:
+        parser.print_help()
+        raise ValueError('Must provide only one of the following: users-by-location-id OR users-by-location-name')
+
     if args.filename:
         args.usernames = InstagramScraper.parse_file_usernames(args.filename)
     else:
@@ -1093,6 +1185,10 @@ def main():
         scraper.scrape_hashtag()
     elif args.location:
         scraper.scrape_location()
+    elif args.users_by_location_name:
+        scraper.scrape_users_by_location_name()
+    elif args.users_by_location_id:
+        scraper.scrape_users_by_location_id()
     elif args.search_location:
         scraper.search_locations()
     else:

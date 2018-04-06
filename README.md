@@ -1,5 +1,7 @@
 <img src="https://camo.githubusercontent.com/9ac4a1f7f5ea0f573451b5ddc06e29c8aa113a85/68747470733a2f2f692e696d6775722e636f6d2f6948326a6468562e706e67" align="right">
 
+[Original repo](https://github.com/rarcega/instagram-scraper)
+
 Instagram Scraper
 =================
 [![PyPI](https://img.shields.io/pypi/v/instagram-scraper.svg)](https://pypi.python.org/pypi/instagram-scraper) [![Build Status](https://travis-ci.org/rarcega/instagram-scraper.svg?branch=master)](https://travis-ci.org/rarcega/instagram-scraper)
@@ -60,6 +62,16 @@ username2
 username3
 
 # and so on...
+```
+
+You can search users by location name:
+```bash
+$ instagram-scrape --users-by-location-name location
+```
+
+You can search users by location id:
+```bash
+$ instagram-scrape --users-by-location-id ID
 ```
 *The usernames may be separated by newlines, commas, semicolons, or whitespace.*
 
@@ -122,6 +134,18 @@ OPTIONS
 
 --search-location   Search for a location by name. Useful for determining the location-id of 
                     a specific place.
+                    
+--users-by-location-name    Search user by location name (Insagram provide several 
+                            location identity, and we go by each).
+                                                        
+--users-by-location-id      Search user by location id.
+
+--filter-by-user-media-count    Filter users by media posts quantity. 
+                                If photo quantity is less than provided number, scrapper will skip that user.
+                                
+--save-user-by-each-iter        Scrape user photos by each locations and users iteration.
+                                It this parameter is not transfered then at first all users in each location 
+                                will be gathered in queue and only after the photos of that users will be scraped                                
 
 ```
 
