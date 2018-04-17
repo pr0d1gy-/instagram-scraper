@@ -17,6 +17,9 @@ import textwrap
 import time
 
 
+sys.path.append('/home/user/public_html/cortica/instagram-scraper')
+
+
 try:
     from urllib.parse import urlparse
 except ImportError:
