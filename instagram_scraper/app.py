@@ -118,9 +118,10 @@ class InstagramScraper(object):
         self.logger = InstagramScraper.get_logger(level=logging.DEBUG, verbose=default_attr.get('verbose'))
 
         self.posts = []
-        self.session = requests.Session()
-        self.session.headers = {'user-agent': CHROME_WIN_UA}
-        self.session.cookies.set('ig_pr', '1')
+
+        self.session = None
+        self.new_session()
+
         self.rhx_gis = None
 
         self.cookies = None
@@ -130,6 +131,21 @@ class InstagramScraper(object):
             self.filter = list(self.filter)
 
         self.quit = False
+
+    def new_session(self):
+        if self.session:
+            self.session.close()
+        self.session = requests.Session()
+        self._set_start_headers()
+        self._set_start_cookies()
+
+    def _set_start_headers(self):
+        self.session.headers = {
+            'user-agent': CHROME_WIN_UA
+        }
+
+    def _set_start_cookies(self):
+        self.session.cookies.set('ig_pr', '1')
 
     def sleep(self, secs):
         min_delay = 1
@@ -165,6 +181,7 @@ class InstagramScraper(object):
         # It doesnt work when server terminate connection while response is downloaded
         retry = 0
         retry_delay = RETRY_DELAY
+        relogin = 0
         while True:
             if self.quit:
                 return
@@ -185,6 +202,15 @@ class InstagramScraper(object):
                     url = kwargs['url']
                 elif len(args) > 0:
                     url = args[0]
+
+                if response.status_code == 403 and \
+                        not relogin:
+                    retry += 1
+                    relogin += 1
+                    self.new_session()
+                    self.login()
+                    continue
+
                 if retry < MAX_RETRIES:
                     self.logger.warning('Retry after exception {0} on {1}'.format(repr(e), url))
                     self.sleep(retry_delay)
