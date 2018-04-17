@@ -25,10 +25,12 @@ $ pip install instagram-scraper --upgrade
 Usage
 -----
 
-To scrape a public user's media:
+To scrape a user's media:
 ```bash
-$ instagram-scraper <username>             
+$ instagram-scraper <username> -u <your username> -p <your password>             
 ```
+*NOTE: To scrape a private user's media you must be an approved follower.*
+
 *By default, downloaded media will be placed in `<current working directory>/<username>`.*
 
 
@@ -38,11 +40,6 @@ $ instagram-scraper <hashtag without #> --tag
 ```
 *It may be useful to specify the `--maximum <#>` argument to limit the total number of items to scrape when scraping by hashtag.*
 
-
-To scrape a private user's media when you are an approved follower:
-```bash
-$ instagram-scraper <username> -u <your username> -p <your password>
-```
 
 To specify multiple users, pass a delimited list of users:
 ```bash
