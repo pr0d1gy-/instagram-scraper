@@ -478,6 +478,7 @@ class InstagramScraper(object):
             self.quit = True
 
         if not self.save_user_by_each_iter:
+            self.quit = False
             self.scrape()
 
     def __scrape_query(self, media_generator, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS)):
