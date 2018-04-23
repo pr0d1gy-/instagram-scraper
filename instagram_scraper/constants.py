@@ -15,10 +15,10 @@ VIEW_MEDIA_URL = BASE_URL + 'p/{0}/?__a=1'
 SEARCH_URL = BASE_URL + 'web/search/topsearch/?context=blended&query={0}'
 
 QUERY_COMMENTS = BASE_URL + 'graphql/query/?query_hash=33ba35852cb50da46f5b5e889df7d159&variables={0}'
-QUERY_COMMENTS_VARS = '{{"shortcode":"{0}","first":100,"after":"{1}"}}'
+QUERY_COMMENTS_VARS = '{{"shortcode":"{0}","first":50,"after":"{1}"}}'
 
 QUERY_HASHTAG = BASE_URL + 'graphql/query/?query_hash=ded47faa9a1aaded10161a2ff32abb6b&variables={0}'
-QUERY_HASHTAG_VARS = '{{"tag_name":"{0}","first":100,"after":"{1}"}}'
+QUERY_HASHTAG_VARS = '{{"tag_name":"{0}","first":50,"after":"{1}"}}'
 
 QUERY_LOCATION = BASE_URL + 'graphql/query/?query_hash=ac38b90f0f3981c42092016a37c59bf7&variables={0}'
 QUERY_LOCATION_VARS = '{{"id":"{0}","first":50,"after":"{1}"}}'
