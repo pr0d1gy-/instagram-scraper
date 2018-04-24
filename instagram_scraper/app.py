@@ -17,6 +17,10 @@ import textwrap
 import time
 
 
+# Trick for lunch app.py from command line
+sys.path.append(os.path.abspath('../'))
+
+
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -711,6 +715,19 @@ class InstagramScraper(object):
 
         return json.loads(resp)['user']
 
+    def __download_and_rename_profile_pic(self, item, profile_pic_url, dst):
+        self.download(item, dst)
+
+        abs_dst = os.path.abspath(dst)
+        profile_pic_name = profile_pic_url.split('/')[-1]
+        ext = profile_pic_name.split('.')[-1]
+
+        if os.path.exists(os.path.join(abs_dst, profile_pic_name)):
+            os.rename(
+                os.path.join(abs_dst, profile_pic_name),
+                os.path.join(abs_dst, 'profile-pic.{}'.format(ext))
+            )
+
     def get_profile_pic(self, dst, executor, future_to_item, user, username):
         if 'image' not in self.media_types:
             return
@@ -736,7 +753,7 @@ class InstagramScraper(object):
         if self.latest is False or os.path.isfile(dst + '/' + item['urls'][0].split('/')[-1]) is False:
             for item in tqdm.tqdm([item], desc='Searching {0} for profile pic'.format(username), unit=" images",
                                   ncols=0, disable=self.quiet):
-                future = executor.submit(self.worker_wrapper, self.download, item, dst)
+                future = executor.submit(self.worker_wrapper, self.__download_and_rename_profile_pic, item, profile_pic_url, dst)
                 future_to_item[future] = item
 
     def get_stories(self, dst, executor, future_to_item, user, username):
