@@ -113,7 +113,8 @@ class InstagramScraper(object):
                             media_types=['image', 'video', 'story-image', 'story-video'],
                             tag=False, location=False, search_location=False, comments=False,
                             verbose=0, include_location=False, filter=None, filter_by_user_media_count=0,
-                            locations=[], save_user_by_each_iter=False, proxy=None, proxy_list_file=None)
+                            locations=[], save_user_by_each_iter=False, proxy=None, proxy_list_file=None,
+                            skip_user_if_folder_exist=False)
 
         allowed_attr = list(default_attr.keys())
         default_attr.update(kwargs)
@@ -347,8 +348,7 @@ class InstagramScraper(object):
             except requests.exceptions.RequestException:
                 self.logger.warning('Failed to log out ' + self.login_user)
 
-    def make_dst_dir(self, username):
-        """Creates the destination directory."""
+    def _get_dst_dir(self, username):
         if self.destination == './':
             dst = './' + username
         else:
@@ -356,6 +356,12 @@ class InstagramScraper(object):
                 dst = self.destination + '/' + username
             else:
                 dst = self.destination
+
+        return dst
+
+    def make_dst_dir(self, username):
+        """Creates the destination directory."""
+        dst = self._get_dst_dir(username)
 
         try:
             os.makedirs(dst)
@@ -501,6 +507,11 @@ class InstagramScraper(object):
                     username = userinfo['username']
                     if username in self.usernames:
                         continue
+
+                    if self.skip_user_if_folder_exist:
+                        dst = self._get_dst_dir(username)
+                        if os.path.exists(os.path.abspath(dst)):
+                            continue
 
                     self.usernames.add(username)
 
@@ -697,6 +708,9 @@ class InstagramScraper(object):
                 future_to_item = {}
 
                 dst = self.make_dst_dir(username)
+                if self.skip_user_if_folder_exist:
+                    if os.path.exists(os.path.abspath(dst)):
+                        continue
 
                 # Get the user metadata.
                 shared_data = self.get_shared_data(username)
@@ -1264,6 +1278,8 @@ def main():
                         help='Retry download attempts endlessly when errors are received')
     parser.add_argument('--proxy', type=str, default=None, help='Proxy for all request.')
     parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
+    parser.add_argument('--skip-user-if-folder-exist', action='store_true', default=False,
+                        help='Skip users if the folder exists with his username as the folder name')
     parser.add_argument('--verbose', '-v', type=int, default=0, help='Logging verbosity level')
 
     args = parser.parse_args()
