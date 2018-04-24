@@ -861,8 +861,8 @@ class InstagramScraper(object):
 
         return None, None
 
-    def get_ig_gis(self, rhx_gis, csrf_token, params):
-        data = rhx_gis + ":" + csrf_token + ":" + CHROME_WIN_UA + ":" + params
+    def get_ig_gis(self, rhx_gis, params):
+        data = rhx_gis + ":" + params
         if sys.version_info.major >= 3:
             return hashlib.md5(data.encode('utf-8')).hexdigest()
         else:
@@ -872,7 +872,6 @@ class InstagramScraper(object):
         self.session.headers.update({
             'x-instagram-gis': self.get_ig_gis(
                 self.rhx_gis,
-                self.cookies['csrftoken'],
                 params
             )
         })
