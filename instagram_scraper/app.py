@@ -15,6 +15,7 @@ import re
 import sys
 import textwrap
 import time
+import random
 
 
 # Trick for lunch app.py from command line
@@ -80,6 +81,26 @@ input = threaded_input
 class PartialContentException(Exception):
     pass
 
+
+class PatchedSession(requests.Session):
+
+    def __init__(self, proxy=None):
+        super(PatchedSession, self).__init__()
+        self.proxy = proxy
+        self.__get = super(PatchedSession, self).get
+        self.__post = super(PatchedSession, self).post
+
+    def get(self, *args, **kwargs):
+        if self.proxy:
+            kwargs['proxies'] = {'https': self.proxy}
+        return self.__get(*args, **kwargs)
+
+    def post(self, *args, **kwargs):
+        if self.proxy:
+            kwargs['proxies'] = {'https': self.proxy}
+        return self.__post(*args, **kwargs)
+
+
 class InstagramScraper(object):
     """InstagramScraper scrapes and downloads an instagram user's photos and videos"""
 
@@ -92,7 +113,7 @@ class InstagramScraper(object):
                             media_types=['image', 'video', 'story-image', 'story-video'],
                             tag=False, location=False, search_location=False, comments=False,
                             verbose=0, include_location=False, filter=None, filter_by_user_media_count=0,
-                            locations=[], save_user_by_each_iter=False)
+                            locations=[], save_user_by_each_iter=False, proxy=None, proxy_list_file=None)
 
         allowed_attr = list(default_attr.keys())
         default_attr.update(kwargs)
@@ -100,6 +121,12 @@ class InstagramScraper(object):
         for key in default_attr:
             if key in allowed_attr:
                 self.__dict__[key] = default_attr.get(key)
+
+        self.proxy_list = []
+        if self.proxy_list_file:
+            self._load_proxy_list(self.proxy_list_file)
+        elif self.proxy:
+                self.proxy_list.append(self.proxy)
 
         # story media type means story-image & story-video
         if 'story' in self.media_types:
@@ -136,10 +163,24 @@ class InstagramScraper(object):
 
         self.quit = False
 
+    def _load_proxy_list(self, proxy_list_file):
+        try:
+            with open(proxy_list_file, 'r') as proxies:
+                for proxy in proxies.readlines():
+                    self.proxy_list.append(proxy.strip())
+        except IOError as e:
+            raise ValueError('File not found ' + e)
+
+    def _get_proxy(self):
+        if not self.proxy_list:
+            return
+        return random.choice(self.proxy_list)
+
     def new_session(self):
         if self.session:
             self.session.close()
-        self.session = requests.Session()
+        self.session = PatchedSession(proxy=self._get_proxy())
+        self.logger.info('Using {!r} proxy.'.format(self.session.proxy))
         self._set_start_headers()
         self._set_start_cookies()
 
@@ -1221,6 +1262,8 @@ def main():
                         help='Enable interactive login challenge solving')
     parser.add_argument('--retry-forever', action='store_true', default=False,
                         help='Retry download attempts endlessly when errors are received')
+    parser.add_argument('--proxy', type=str, default=None, help='Proxy for all request.')
+    parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
     parser.add_argument('--verbose', '-v', type=int, default=0, help='Logging verbosity level')
 
     args = parser.parse_args()
@@ -1263,6 +1306,10 @@ def main():
     if args.retry_forever:
         global MAX_RETRIES
         MAX_RETRIES = sys.maxsize
+
+    if args.proxy and args.proxy_list_file:
+        parser.print_help()
+        raise ValueError('Must provide only one of the following: proxy or proxy-list-file')
 
     scraper = InstagramScraper(**vars(args))
 
