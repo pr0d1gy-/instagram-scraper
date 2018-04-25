@@ -251,6 +251,9 @@ class InstagramScraper(object):
                 elif len(args) > 0:
                     url = args[0]
 
+                if response.status_code == 500:
+                    return
+
                 if response.status_code == 403 and \
                         not relogin:
                     retry += 1
