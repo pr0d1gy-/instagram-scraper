@@ -114,7 +114,7 @@ class InstagramScraper(object):
                             tag=False, location=False, search_location=False, comments=False,
                             verbose=0, include_location=False, filter=None, filter_by_user_media_count=0,
                             locations=[], save_user_by_each_iter=False, proxy=None, proxy_list_file=None,
-                            skip_user_if_folder_exist=False)
+                            skip_user_if_folder_exist=False, ignore_request_errors=False)
 
         allowed_attr = list(default_attr.keys())
         default_attr.update(kwargs)
@@ -280,6 +280,9 @@ class InstagramScraper(object):
                     retry = retry + 1
                     continue
                 else:
+                    if self.ignore_request_errors:
+                        return
+
                     keep_trying = self._retry_prompt(url, repr(e))
                     if keep_trying == True:
                         retry = 0
@@ -1293,6 +1296,7 @@ def main():
     parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
     parser.add_argument('--skip-user-if-folder-exist', action='store_true', default=False,
                         help='Skip users if the folder exists with his username as the folder name (for searching users in location only)')
+    parser.add_argument('--ignore-request-errors', help='Ignore request errors when all repeats is over')
     parser.add_argument('--verbose', '-v', type=int, default=0, help='Logging verbosity level')
 
     args = parser.parse_args()
