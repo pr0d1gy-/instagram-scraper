@@ -1299,7 +1299,8 @@ def main():
     parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
     parser.add_argument('--skip-user-if-folder-exist', action='store_true', default=False,
                         help='Skip users if the folder exists with his username as the folder name (for searching users in location only)')
-    parser.add_argument('--ignore-request-errors', help='Ignore request errors when all repeats is over')
+    parser.add_argument('--ignore-request-errors', action='store_true', default=False,
+                        help='Ignore request errors when all repeats is over')
     parser.add_argument('--verbose', '-v', type=int, default=0, help='Logging verbosity level')
 
     args = parser.parse_args()
