@@ -177,11 +177,12 @@ class InstagramScraper(object):
             return
         return random.choice(self.proxy_list)
 
-    def new_session(self):
+    def new_session(self, is_change_proxy=True):
         if self.session:
             self.session.close()
-        self.session = PatchedSession(proxy=self._get_proxy())
-        self.logger.info('Using {!r} proxy.'.format(self.session.proxy))
+        self.session = PatchedSession(proxy=self._get_proxy() if is_change_proxy else None)
+        if self.session.proxy:
+            self.logger.info('Using {!r} proxy.'.format(self.session.proxy))
         self._set_start_headers()
         self._set_start_cookies()
 
@@ -228,6 +229,7 @@ class InstagramScraper(object):
         retry = 0
         retry_delay = RETRY_DELAY
         relogin = 0
+        retry_429 = None
         while True:
             if self.quit:
                 return
@@ -253,8 +255,22 @@ class InstagramScraper(object):
                         not relogin:
                     retry += 1
                     relogin += 1
-                    self.new_session()
+                    self.new_session(is_change_proxy=False)
                     self.login()
+                    continue
+
+                if response.status_code == 429 and \
+                        retry_429 is not False:
+                    # This feature will work in first time with sleep,
+                    #  in second time - change proxy, third - will ignore
+                    retry += 1
+                    if retry_429:
+                        self.new_session(is_change_proxy=True)
+                        self.login()
+                        retry_429 = False
+                        continue
+                    retry_429 = True
+                    self.sleep(RETRY_DELAY)
                     continue
 
                 if retry < MAX_RETRIES:
@@ -1276,7 +1292,7 @@ def main():
     parser.add_argument('--proxy', type=str, default=None, help='Proxy for all request.')
     parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
     parser.add_argument('--skip-user-if-folder-exist', action='store_true', default=False,
-                        help='Skip users if the folder exists with his username as the folder name')
+                        help='Skip users if the folder exists with his username as the folder name (for searching users in location only)')
     parser.add_argument('--verbose', '-v', type=int, default=0, help='Logging verbosity level')
 
     args = parser.parse_args()
