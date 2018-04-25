@@ -33,6 +33,9 @@ import threading
 import concurrent.futures
 import requests
 import tqdm
+import pymodm
+import boto3
+from botocore.exceptions import ClientError as Boto3ClientError
 
 from instagram_scraper.constants import *
 
@@ -82,6 +85,110 @@ class PartialContentException(Exception):
     pass
 
 
+def create_user_model_for_mongodb(users_table_name):
+    class UserModel(pymodm.MongoModel):
+
+        user_name = pymodm.fields.CharField()
+        user_dob = pymodm.fields.CharField(blank=True)
+        user_gender = pymodm.fields.CharField(blank=True)
+        user_location = pymodm.fields.CharField(blank=True)
+        folder_s3_url = pymodm.fields.CharField()
+
+        photos_count = pymodm.fields.IntegerField(default=0)
+        profile_unique_id = pymodm.fields.CharField()
+        spider_name = pymodm.fields.CharField()
+
+        indexed = pymodm.fields.BooleanField(default=False)
+        clustered = pymodm.fields.BooleanField(default=False)
+        verified = pymodm.fields.BooleanField(default=False)
+
+        class Meta:
+
+            final = True
+            collection_name = users_table_name
+
+        @classmethod
+        def check_user_for_exist(cls, profile_unique_id):
+            try:
+                return cls.objects.get({
+                    'profile_unique_id': profile_unique_id,
+                    'spider_name': SCRAPPER_NAME
+                })
+            except cls.DoesNotExist:
+                return False
+
+    return UserModel
+
+
+def create_s3_service(aws_s3_region, aws_s3_bucket_name,
+                      aws_access_key_id=None, aws_secret_access_key=None):
+    class S3Service(object):
+
+        __s3 = None
+
+        @classmethod
+        def get_s3(cls):
+            if not cls.__s3:
+                cls.__s3 = boto3.resource(
+                    's3',
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
+                    region_name=aws_s3_region)
+                cls._create_bucket_if_not_exist()
+            return cls.__s3
+
+        @property
+        def s3(self):
+            return self.get_s3()
+
+        @classmethod
+        def _create_bucket_if_not_exist(cls):
+            s3 = cls.get_s3()
+            try:
+                s3.meta.client.head_bucket(Bucket=aws_s3_bucket_name)
+            except Boto3ClientError as e:
+                # http://boto3.readthedocs.io/en/latest/guide/migrations3.html#accessing-a-bucket  # noqa
+                error_code = int(e.response['Error']['Code'])
+                if error_code == 404:
+                    # Create bucket
+                    s3.create_bucket(Bucket=aws_s3_bucket_name)
+                    # Set public permission for the bucket
+                    s3.Bucket(aws_s3_bucket_name).Acl().put(ACL='public-read')
+                else:
+                    raise ValueError('Wrong AWS credentials.') from e
+
+        @staticmethod
+        def generate_s3_folder(**kwargs):
+            return AWS_S3_FOLDER_MASK_NAME.format(**kwargs)
+
+        def generate_s3_url(self, **kwargs):
+            return 'https://{bucket}.s3.{region}.amazonaws.com/{folder}'.format(
+                bucket=aws_s3_bucket_name,
+                region=aws_s3_region,
+                folder=self.generate_s3_folder(**kwargs)
+            )
+
+        # def process_item(self, item, spider):
+        #     if not isinstance(item, PhotoItem):
+        #         return item
+        #
+        #     img = self.s3.Object(
+        #         AWS_S3_BUCKET_NAME,
+        #         '{}/{}'.format(
+        #             self.generate_s3_folder(item),
+        #             item['img_name']
+        #         )
+        #     )
+        #
+        #     img.upload_file(item['img_local_path'])
+        #     # Make public
+        #     img.Acl().put(ACL='public-read')
+        #
+        #     return item
+
+    return S3Service
+
+
 class PatchedSession(requests.Session):
 
     def __init__(self, proxy=None):
@@ -114,7 +221,9 @@ class InstagramScraper(object):
                             tag=False, location=False, search_location=False, comments=False,
                             verbose=0, include_location=False, filter=None, filter_by_user_media_count=0,
                             locations=[], save_user_by_each_iter=False, proxy=None, proxy_list_file=None,
-                            skip_user_if_folder_exist=False, ignore_request_errors=False)
+                            skip_user_if_folder_exist=False, ignore_request_errors=False, users_table_name=USERS_TABLE_NAME,
+                            mongodb_uri=None, aws_s3_region=AWS_S3_REGION, aws_s3_bucket_name=AWS_S3_BUCKET_NAME,
+                            aws_access_key_id=None, aws_secret_access_key=None)
 
         allowed_attr = list(default_attr.keys())
         default_attr.update(kwargs)
@@ -163,6 +272,21 @@ class InstagramScraper(object):
             self.filter = list(self.filter)
 
         self.quit = False
+
+        # Connect to mongodb
+        if not self.mongodb_uri:
+            raise ValueError('MongoDB URI is required.')
+        pymodm.connect(self.mongodb_uri)
+        # Create user model
+        self.UserModel = create_user_model_for_mongodb(self.users_table_name)
+
+        from pudb import set_trace
+        set_trace()
+
+        # Create S3 Service
+        self.S3Service = create_s3_service(
+            aws_s3_region=self.aws_s3_region, aws_s3_bucket_name=self.aws_s3_bucket_name,
+            aws_access_key_id=self.aws_access_key_id, aws_secret_access_key=self.aws_secret_access_key)
 
     def _load_proxy_list(self, proxy_list_file):
         try:
@@ -537,6 +661,9 @@ class InstagramScraper(object):
                         dst = self._get_dst_dir(username)
                         if os.path.exists(os.path.abspath(dst)):
                             continue
+
+                    if self.UserModel.check_user_for_exist(username):
+                        continue
 
                     self.usernames.add(username)
 
@@ -1304,6 +1431,12 @@ def main():
                         help='Enable interactive login challenge solving')
     parser.add_argument('--retry-forever', action='store_true', default=False,
                         help='Retry download attempts endlessly when errors are received')
+    parser.add_argument('--users-table-name', type=str, default=USERS_TABLE_NAME, help='MongoDB table name for users.')
+    parser.add_argument('--mongodb-uri', type=str, required=True, help='MongoDB URI')
+    parser.add_argument('--aws-s3-region', type=str, default=AWS_S3_REGION, help='AWS S3 Region')
+    parser.add_argument('--aws-s3-bucket-name', type=str, default=AWS_S3_BUCKET_NAME, help='AWS S3 Bucket name')
+    parser.add_argument('--aws-access-key-id', type=str, default=None, help='AWS ACCESS KEY ID.')
+    parser.add_argument('--aws-secret-access-key', type=str, default=None, help='AWS SECRET ACCESS KEY')
     parser.add_argument('--proxy', type=str, default=None, help='Proxy for all request.')
     parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
     parser.add_argument('--skip-user-if-folder-exist', action='store_true', default=False,

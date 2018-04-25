@@ -34,25 +34,12 @@ MAX_RETRY_DELAY = 60
 
 LATEST_STAMPS_USER_SECTION = 'users'
 
-
 USERS_TABLE_NAME = 'user'
 
 
-AWS_S3_REGION = None
-AWS_S3_BUCKET_NAME = None
-AWS_S3_FOLDER_MASK_NAME = None
-AWS_ACCESS_KEY_ID = None
-AWS_SECRET_ACCESS_KEY = None
+SCRAPPER_NAME = 'instagram-scrapper'
 
 
-MONGODB_HOST = 'localhost'
-MONGODB_PORT = '27017'
-MONGODB_DB = 'corticadb'
-# OR (if None - will be ignored)
-MONGODB_URI = None
-
-
-try:
-    from . constants_local import *
-except ImportError:
-    pass
+AWS_S3_REGION = 'eu-west-1'
+AWS_S3_BUCKET_NAME = 'cortica-faces-scraper'
+AWS_S3_FOLDER_MASK_NAME = '{}/{{location}}/{{username}}'.format(SCRAPPER_NAME)
