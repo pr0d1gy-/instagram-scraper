@@ -251,6 +251,8 @@ class InstagramScraper(object):
                 elif len(args) > 0:
                     url = args[0]
 
+                print(response.status_code)
+
                 if response.status_code == 500:
                     return
 
@@ -538,7 +540,7 @@ class InstagramScraper(object):
                     self.usernames.add(username)
 
                     if self.save_user_by_each_iter:
-                        self.scrape()
+                        self.scrape(is_logout_on_finish=False)
                         self.usernames.remove(username)
 
                     _iter += 1
@@ -720,7 +722,7 @@ class InstagramScraper(object):
             details = self.__get_media_details(code)
             item['location'] = details.get('location')
 
-    def scrape(self, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS)):
+    def scrape(self, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS), is_logout_on_finish=True):
         """Crawls through and downloads user's media"""
         try:
             for username in self.usernames:
@@ -777,7 +779,8 @@ class InstagramScraper(object):
                     self.logger.error("Unable to scrape user - %s" % username)
         finally:
             self.quit = True
-            self.logout()
+            if is_logout_on_finish:
+                self.logout()
 
     def get_userinfo_by_id(self, user_id):
         url = USER_INFO.format(user_id)
