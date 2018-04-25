@@ -10,3 +10,4 @@ insta_args.txt
 .idea
 README.rst
 *.sh
+instagram_scraper/constants_local.py

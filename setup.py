@@ -3,7 +3,9 @@ from setuptools import setup, find_packages
 
 requires = [
     'requests>=2.18.4',
-    'tqdm>=3.8.0'
+    'tqdm>=3.8.0',
+    'boto3==1.6.22',
+    'pymodm==0.4.0'
 ]
 
 if sys.version_info < (3, 2):

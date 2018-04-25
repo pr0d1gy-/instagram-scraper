@@ -475,6 +475,7 @@ class InstagramScraper(object):
         self.__scrape_query(self.query_location_gen)
 
     def scrape_users_by_location_name(self):
+        self.location_name = self.usernames[0]
         dirty_locations = self.search_locations(is_return=True)
         self.locations = set()
 
@@ -777,6 +778,11 @@ class InstagramScraper(object):
                         self.save_json(self.posts, '{0}/{1}.json'.format(dst, username))
                 except ValueError:
                     self.logger.error("Unable to scrape user - %s" % username)
+
+                print('\nuser {!r} from {!r} Location was saved.\n'.format(username, self.location_name))
+                print(os.listdir(dst))
+                print('\n')
+
         finally:
             self.quit = True
             if is_logout_on_finish:
@@ -1350,6 +1356,10 @@ def main():
     if args.proxy and args.proxy_list_file:
         parser.print_help()
         raise ValueError('Must provide only one of the following: proxy or proxy-list-file')
+
+    if args.users_by_location_name or args.users_by_location_id:
+        if len(args.usernames) > 1:
+            raise ValueError('Must provide only one location')
 
     scraper = InstagramScraper(**vars(args))
 
