@@ -708,9 +708,6 @@ class InstagramScraper(object):
                 future_to_item = {}
 
                 dst = self.make_dst_dir(username)
-                if self.skip_user_if_folder_exist:
-                    if os.path.exists(os.path.abspath(dst)):
-                        continue
 
                 # Get the user metadata.
                 shared_data = self.get_shared_data(username)
