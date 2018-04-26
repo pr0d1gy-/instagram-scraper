@@ -672,7 +672,7 @@ class InstagramScraper(object):
                     self.usernames.add(username)
 
                     if self.save_user_by_each_iter:
-                        self.scrape(is_logout_on_finish=False)
+                        self.scrape(is_logout_on_finish=True)
                         self.usernames.remove(username)
 
                     _iter += 1
@@ -893,7 +893,7 @@ class InstagramScraper(object):
     def scrape(self, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS), is_logout_on_finish=True):
         """Crawls through and downloads user's media"""
         try:
-            old_rhx_gis = self.rhx_gis
+            # old_rhx_gis = self.rhx_gis
             for username in self.usernames:
                 self.posts = []
                 self.last_scraped_filemtime = 0
@@ -962,7 +962,7 @@ class InstagramScraper(object):
                                 self.logger.error('Remove user folder generated an exception: {}'.format(future.exception()))
 
         finally:
-            self.rhx_gis = old_rhx_gis
+            # self.rhx_gis = old_rhx_gis
             self.quit = True
             if is_logout_on_finish:
                 self.logout()
