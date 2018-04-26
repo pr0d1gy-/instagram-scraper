@@ -126,6 +126,10 @@ def create_s3_service(aws_s3_region, aws_s3_bucket_name,
 
         __s3 = None
 
+        def __init__(self, initialize=True):
+            if initialize:
+                self._create_bucket_if_not_exist()
+
         @classmethod
         def get_s3(cls):
             if not cls.__s3:
@@ -168,23 +172,25 @@ def create_s3_service(aws_s3_region, aws_s3_bucket_name,
                 folder=self.generate_s3_folder(**kwargs)
             )
 
-        # def process_item(self, item, spider):
-        #     if not isinstance(item, PhotoItem):
-        #         return item
-        #
-        #     img = self.s3.Object(
-        #         AWS_S3_BUCKET_NAME,
-        #         '{}/{}'.format(
-        #             self.generate_s3_folder(item),
-        #             item['img_name']
-        #         )
-        #     )
-        #
-        #     img.upload_file(item['img_local_path'])
-        #     # Make public
-        #     img.Acl().put(ACL='public-read')
-        #
-        #     return item
+        def upload(self, location, username, img_name, full_path):
+            kw = {
+                'location': location,
+                'username': username
+            }
+
+            img = self.s3.Object(
+                AWS_S3_BUCKET_NAME,
+                '{}/{}'.format(
+                    self.generate_s3_folder(**kw),
+                    img_name
+                )
+            )
+
+            img.upload_file(full_path)
+            # Make public
+            img.Acl().put(ACL='public-read')
+
+            return img
 
     return S3Service
 
@@ -223,7 +229,7 @@ class InstagramScraper(object):
                             locations=[], save_user_by_each_iter=False, proxy=None, proxy_list_file=None,
                             skip_user_if_folder_exist=False, ignore_request_errors=False, users_table_name=USERS_TABLE_NAME,
                             mongodb_uri=None, aws_s3_region=AWS_S3_REGION, aws_s3_bucket_name=AWS_S3_BUCKET_NAME,
-                            aws_access_key_id=None, aws_secret_access_key=None)
+                            aws_access_key_id=None, aws_secret_access_key=None, remove_after_upload=False)
 
         allowed_attr = list(default_attr.keys())
         default_attr.update(kwargs)
@@ -280,13 +286,10 @@ class InstagramScraper(object):
         # Create user model
         self.UserModel = create_user_model_for_mongodb(self.users_table_name)
 
-        from pudb import set_trace
-        set_trace()
-
         # Create S3 Service
         self.S3Service = create_s3_service(
             aws_s3_region=self.aws_s3_region, aws_s3_bucket_name=self.aws_s3_bucket_name,
-            aws_access_key_id=self.aws_access_key_id, aws_secret_access_key=self.aws_secret_access_key)
+            aws_access_key_id=self.aws_access_key_id, aws_secret_access_key=self.aws_secret_access_key)()
 
     def _load_proxy_list(self, proxy_list_file):
         try:
@@ -662,8 +665,9 @@ class InstagramScraper(object):
                         if os.path.exists(os.path.abspath(dst)):
                             continue
 
-                    if self.UserModel.check_user_for_exist(username):
-                        continue
+                    if self.mongodb_uri:
+                        if self.UserModel.check_user_for_exist(username):
+                            continue
 
                     self.usernames.add(username)
 
@@ -850,9 +854,46 @@ class InstagramScraper(object):
             details = self.__get_media_details(code)
             item['location'] = details.get('location')
 
+    def _upload_to_mongodb(self, user, username, location_name):
+        user_list = [self.UserModel(
+            user_name=user['full_name'],
+            user_location=location_name,
+            folder_s3_url=self.S3Service.generate_s3_url(
+                location=location_name,
+                username=username
+            ),
+            photos_count=user['edge_owner_to_timeline_media']['count'],
+            profile_unique_id=username,
+            spider_name=SCRAPPER_NAME
+        )]
+
+        for user in tqdm.tqdm(user_list, total=len(user_list), desc='Uploading to mongodb', disable=self.quiet):
+            user.save()
+
+    def _upload_to_s3(self, dst, username, location_name):
+        img_list = os.listdir(dst)
+        for img in tqdm.tqdm(img_list, total=len(img_list), desc='Uploading to S3', disable=self.quiet):
+            self.S3Service.upload(
+                location=location_name,
+                username=username,
+                img_name=img,
+                full_path=os.path.join(os.path.abspath(dst), img)
+            )
+
+    def _remove_user_folder(self, dst):
+        img_list = os.listdir(dst)
+        abs_dst = os.path.abspath(dst)
+        for img in tqdm.tqdm(img_list, total=len(img_list), desc='Remove folder', disable=self.quiet):
+            img_full_path = os.path.join(abs_dst, img)
+            if os.path.exists(img_full_path):
+                os.remove(img_full_path)
+
+        os.rmdir(abs_dst)
+
     def scrape(self, executor=concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DOWNLOADS), is_logout_on_finish=True):
         """Crawls through and downloads user's media"""
         try:
+            old_rhx_gis = self.rhx_gis
             for username in self.usernames:
                 self.posts = []
                 self.last_scraped_filemtime = 0
@@ -905,12 +946,23 @@ class InstagramScraper(object):
                         self.save_json(self.posts, '{0}/{1}.json'.format(dst, username))
                 except ValueError:
                     self.logger.error("Unable to scrape user - %s" % username)
+                else:
+                    if self.UserModel and self.S3Service:
+                        future = executor.submit(self.worker_wrapper, self._upload_to_s3, dst, username, self.location_name)
+                        if future.exception() is not None:
+                            self.logger.error('Upload to S3 generated an exception: {}'.format(future.exception()))
 
-                print('\nuser {!r} from {!r} Location was saved.\n'.format(username, self.location_name))
-                print(os.listdir(dst))
-                print('\n')
+                        future = executor.submit(self.worker_wrapper, self._upload_to_mongodb, user, username, self.location_name)
+                        if future.exception() is not None:
+                            self.logger.error('Upload to mongodb generated an exception: {}'.format(future.exception()))
+
+                        if self.remove_after_upload:
+                            future = executor.submit(self.worker_wrapper, self._remove_user_folder, dst)
+                            if future.exception() is not None:
+                                self.logger.error('Remove user folder generated an exception: {}'.format(future.exception()))
 
         finally:
+            self.rhx_gis = old_rhx_gis
             self.quit = True
             if is_logout_on_finish:
                 self.logout()
@@ -1437,6 +1489,7 @@ def main():
     parser.add_argument('--aws-s3-bucket-name', type=str, default=AWS_S3_BUCKET_NAME, help='AWS S3 Bucket name')
     parser.add_argument('--aws-access-key-id', type=str, default=None, help='AWS ACCESS KEY ID.')
     parser.add_argument('--aws-secret-access-key', type=str, default=None, help='AWS SECRET ACCESS KEY')
+    parser.add_argument('--remove-after-upload', action='store_true', default=False, help='Remove pictures and folder after upload')
     parser.add_argument('--proxy', type=str, default=None, help='Proxy for all request.')
     parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
     parser.add_argument('--skip-user-if-folder-exist', action='store_true', default=False,
