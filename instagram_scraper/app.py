@@ -229,7 +229,8 @@ class InstagramScraper(object):
                             locations=[], save_user_by_each_iter=False, proxy=None, proxy_list_file=None,
                             skip_user_if_folder_exist=False, ignore_request_errors=False, users_table_name=USERS_TABLE_NAME,
                             mongodb_uri=None, aws_s3_region=AWS_S3_REGION, aws_s3_bucket_name=AWS_S3_BUCKET_NAME,
-                            aws_access_key_id=None, aws_secret_access_key=None, remove_after_upload=False)
+                            aws_access_key_id=None, aws_secret_access_key=None, remove_after_upload=False,
+                            use_sleep_in_each_request=True)
 
         allowed_attr = list(default_attr.keys())
         default_attr.update(kwargs)
@@ -360,6 +361,10 @@ class InstagramScraper(object):
         while True:
             if self.quit:
                 return
+
+            if self.use_sleep_in_each_request:
+                self.sleep(random.randrange(*RANDOM_PAUSE_PERIOD))
+
             try:
                 response = self.session.get(timeout=CONNECT_TIMEOUT, *args, **kwargs)
                 if response.status_code == 404:
@@ -378,7 +383,7 @@ class InstagramScraper(object):
                 elif len(args) > 0:
                     url = args[0]
 
-                print(response.status_code)
+                # print(response.status_code)
 
                 if response.status_code == 500:
                     return
@@ -400,6 +405,7 @@ class InstagramScraper(object):
                         self.new_session(is_change_proxy=True)
                         self.login()
                         retry_429 = False
+                        # print('relogin')
                         continue
                     retry_429 = True
                     self.sleep(RETRY_DELAY)
@@ -1240,6 +1246,10 @@ class InstagramScraper(object):
                         while(True):
                             if self.quit:
                                 return
+
+                            if self.use_sleep_in_each_request:
+                                self.sleep(random.randrange(*RANDOM_PAUSE_PERIOD))
+
                             try:
                                 downloaded_before = downloaded
                                 if downloaded_before != 0:
@@ -1483,13 +1493,18 @@ def main():
                         help='Enable interactive login challenge solving')
     parser.add_argument('--retry-forever', action='store_true', default=False,
                         help='Retry download attempts endlessly when errors are received')
-    parser.add_argument('--users-table-name', type=str, default=USERS_TABLE_NAME, help='MongoDB table name for users.')
+    parser.add_argument('--users-table-name', type=str, default=USERS_TABLE_NAME,
+                        help='MongoDB table name for users. Default: {}'.format(USERS_TABLE_NAME))
     parser.add_argument('--mongodb-uri', type=str, required=True, help='MongoDB URI')
-    parser.add_argument('--aws-s3-region', type=str, default=AWS_S3_REGION, help='AWS S3 Region')
-    parser.add_argument('--aws-s3-bucket-name', type=str, default=AWS_S3_BUCKET_NAME, help='AWS S3 Bucket name')
+    parser.add_argument('--aws-s3-region', type=str, default=AWS_S3_REGION,
+                        help='AWS S3 Region. Default: {}'.format(AWS_S3_REGION))
+    parser.add_argument('--aws-s3-bucket-name', type=str, default=AWS_S3_BUCKET_NAME,
+                        help='AWS S3 Bucket name. Default: {}'.format(AWS_S3_BUCKET_NAME))
     parser.add_argument('--aws-access-key-id', type=str, default=None, help='AWS ACCESS KEY ID.')
     parser.add_argument('--aws-secret-access-key', type=str, default=None, help='AWS SECRET ACCESS KEY')
     parser.add_argument('--remove-after-upload', action='store_true', default=False, help='Remove pictures and folder after upload')
+    parser.add_argument('--use-sleep-in-each-request', action='store_true', default=False,
+                        help='Use sleep per each request in range {}-{}'.format(*RANDOM_PAUSE_PERIOD))
     parser.add_argument('--proxy', type=str, default=None, help='Proxy for all request.')
     parser.add_argument('--proxy-list-file', help='Proxy list (file) for all request.')
     parser.add_argument('--skip-user-if-folder-exist', action='store_true', default=False,

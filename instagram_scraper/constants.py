@@ -43,3 +43,5 @@ SCRAPPER_NAME = 'instagram-scrapper'
 AWS_S3_REGION = 'eu-west-1'
 AWS_S3_BUCKET_NAME = 'cortica-faces-scraper'
 AWS_S3_FOLDER_MASK_NAME = '{}/{{location}}/{{username}}'.format(SCRAPPER_NAME)
+
+RANDOM_PAUSE_PERIOD = (1, 5)
